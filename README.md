@@ -1,0 +1,2 @@
+# mylog
+Custom Log JS
