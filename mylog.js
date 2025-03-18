@@ -7,67 +7,80 @@ var log = (function() {
   var defaultFontWeight  = "normal";
   var defaultTextShadow  = "none";
 
-  // Helper: Get caller location (file name and line number) from error stack.
+
+  // Advanced helper: Get caller location (file name and line number) from error stack, auto-detecting
   function getCallerLocation(full = false) {
-    var err = new Error();
-    // Ensure error.stack is available
+    // Create an error to capture the current stack trace.
+    const err = new Error();
     if (!err.stack) {
-      try { throw err; } catch (e) { err = e; }
+      try { throw err; } catch (e) { /* fallback */ }
     }
-    var stackLines = err.stack.split("\n");
-    // console.log(stackLines); // For debugging stack traces
-
-    if (stackLines.length < 4) return ""; // Stack trace too short
-
-    let callerLine = null;
-    const scriptFilename = 'script.js'; // Adjust if your script filename is different
-
-    // Iterate through stack lines to find the caller line (outside script.js)
+    
+    // Split stack trace into non-empty lines.
+    const stackLines = err.stack.split("\n").filter(line => line.trim() !== "");
+    
+    // Use a regex that works for both Chrome (at func (file:line:col))
+    // and Firefox (func@file:line:col) stack formats.
+    const regex = /(?:at\s+(?:.*\s+\()?|@)(.*?):(\d+):(\d+)\)?$/;
+    
+    // First, determine the internal file (the file where this helper is defined)
+    // by looking at the first line that contains file info.
+    let internalFile = "";
+    for (let i = 0; i < stackLines.length; i++) {
+      const line = stackLines[i].trim();
+      const match = line.match(regex);
+      if (match) {
+        internalFile = match[1].startsWith("file://")
+          ? match[1].substring(7)
+          : match[1];
+        break;
+      }
+    }
+    
+    // Define a list of function name patterns to ignore.
+    // (These are functions internal to the logging library.)
+    const ignorePatterns = [
+      /getCallerLocation/,
+      /baseLogger/,
+      /createLoggerVariant/,
+      /logger\./ // catch any logger.* calls
+    ];
+    
+    // Iterate through the stack lines (skipping the first line, which is usually "Error")
+    // and select the first frame that is not from the internal logging file or functions.
     for (let i = 1; i < stackLines.length; i++) {
       const line = stackLines[i].trim();
-      if (line.includes('at ') || line.includes('@ ')) { // Check for 'at ' or '@ ' to identify relevant lines
-        if (!line.includes(scriptFilename)) { // Exclude lines containing script.js (our logger library)
-          callerLine = line;
-          break; // Found the caller line, exit loop
+      const match = line.match(regex);
+      if (match) {
+        let filePath = match[1].startsWith("file://")
+          ? match[1].substring(7)
+          : match[1];
+        
+        // Skip frames that are from the same internal file.
+        if (filePath === internalFile) {
+          continue;
         }
+        
+        // Also skip lines that mention internal logging function names.
+        let ignore = ignorePatterns.some(pattern => pattern.test(line));
+        if (ignore) {
+          continue;
+        }
+        
+        // Extract line and column numbers.
+        const lineNum = match[2];
+        const colNum = match[3];
+        const parts = filePath.split('/');
+        const filename = parts.pop();
+        
+        // Return full path details or just filename:linenumber as desired.
+        if (full === true) {
+          return `${filePath}:${lineNum}:${colNum}`;
+        }
+        return `${filename}:${lineNum}`;
       }
     }
-
-    if (!callerLine) {
-      callerLine = stackLines[stackLines.length - 1].trim(); // Fallback to last line if no clear caller found
-    }
-
-
-    // Robust regex to capture file path and line number from various stack trace formats
-    const match = callerLine.match(/(?:at |@ )(.*?)(?::(\d+))?(?::(\d+))?$/);
-    if (match) {
-      let fullPath = match[1];
-
-      if (!fullPath) return ""; // No path found in regex match
-
-      if (fullPath.startsWith("file://")) {
-        fullPath = fullPath.substring("file://".length); // Remove file:// prefix if present
-      }
-
-      // Normalize path separators to forward slash for consistent splitting
-      fullPath = fullPath.replace(/\\/g, '/');
-
-      let parts = fullPath.split('/');
-      let filename = parts.pop(); // Get the last part (filename)
-
-      if (!filename) filename = parts.pop(); // Handle cases where path ends with slash
-
-
-      let lineNumber = match[2] || 'UnknownLine'; // Get line number, default to 'UnknownLine' if not found
-
-      if (full === true) {
-        return fullPath + ":" + lineNumber;
-      }
-      return filename + ":" + lineNumber; // Return filename:linenumber
-    }
-
-
-    return callerLine || ""; // Return the raw caller line if regex fails or empty string if no callerLine found
+    return "";
   }
 
   // Helper: Get current time in HH:mm:ss format (12-hour format)
