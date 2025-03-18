@@ -72,3 +72,8 @@ log([
   { text: "Client Data Stored ", style: { fontColor: "yellow", fontWeight: "bold" } },
   clientData // Pass the object directly as a segment (will now be formatted correctly)
 ]);
+
+
+// table
+log.table({ product: "Laptop", price: 1200, brand: "TechCorp" });
+log.tb(`[{"item": "Book", "author": "Author A"}]`);
